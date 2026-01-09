@@ -4,11 +4,13 @@ import {
   Text,
   TouchableOpacity,
   StatusBar,
-  FlatList,
+  ScrollView,
   ActivityIndicator,
   Alert,
   RefreshControl,
   Image,
+  Platform,
+  Pressable,
 } from 'react-native';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {SettingsStackParamList} from '../../App';
@@ -32,6 +34,13 @@ import {
 import ReactNativeHapticFeedback from 'react-native-haptic-feedback';
 import {settingsStorage} from '../../lib/storage';
 import RenderProviderFlagIcon from '../../components/RenderProviderFLagIcon';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+} from 'react-native-reanimated';
+
+const isTV = Platform.isTV;
 
 type Props = NativeStackScreenProps<SettingsStackParamList, 'Extensions'>;
 
@@ -250,7 +259,13 @@ const Extensions = ({navigation}: Props) => {
       setRefreshing(false);
     }
   };
-  const renderProviderCard = ({item}: {item: ProviderExtension}) => {
+  const renderProviderCard = ({
+    item,
+    index,
+  }: {
+    item: ProviderExtension;
+    index: number;
+  }) => {
     if (!item || !item.value) return null;
     const isActive = activeExtensionProvider?.value === item.value;
     const isInstalled = extensionStorage.isProviderInstalled(item.value);
@@ -261,10 +276,59 @@ const Extensions = ({navigation}: Props) => {
     );
     const hasUpdate = updateInfo?.hasUpdate || false;
 
+    // TV focusable card wrapper
+    const TVFocusableCard = ({children}: {children: React.ReactNode}) => {
+      const borderWidth = useSharedValue(0);
+
+      const animatedStyle = useAnimatedStyle(() => ({
+        borderWidth: borderWidth.value,
+        borderColor: primary,
+      }));
+
+      if (isTV) {
+        return (
+          <Pressable
+            onPress={() =>
+              activeTab === 'installed'
+                ? handleSetActiveProvider(item)
+                : handleInstallProvider(item)
+            }
+            onFocus={() => {
+              borderWidth.value = withTiming(3, {duration: 150});
+            }}
+            onBlur={() => {
+              borderWidth.value = withTiming(0, {duration: 150});
+            }}
+            hasTVPreferredFocus={index === 0}
+            isTVSelectable={true}
+            style={{marginHorizontal: 16, marginBottom: 16}}>
+            <Animated.View
+              style={[
+                animatedStyle,
+                {
+                  backgroundColor: '#262626',
+                  borderRadius: 16,
+                  padding: 20,
+                  paddingVertical: 12,
+                },
+              ]}>
+              {children}
+            </Animated.View>
+          </Pressable>
+        );
+      }
+
+      return (
+        <View
+          className="bg-tertiary rounded-2xl p-5 py-3 mb-4 mx-4 shadow-lg border border-quaternary"
+          style={{elevation: 4}}>
+          {children}
+        </View>
+      );
+    };
+
     return (
-      <View
-        className="bg-tertiary rounded-2xl p-5 py-3 mb-4 mx-4 shadow-lg border border-quaternary"
-        style={{elevation: 4}}>
+      <TVFocusableCard>
         <View className="flex-row items-center mb-4 gap-4 justify-between">
           {/* Left: Icon */}
           {item.icon ? (
@@ -370,7 +434,7 @@ const Extensions = ({navigation}: Props) => {
             )}
           </View>
         </View>
-      </View>
+      </TVFocusableCard>
     );
   };
   const currentData =
@@ -384,7 +448,7 @@ const Extensions = ({navigation}: Props) => {
       {/* Header */}
       <View className="flex-row items-center justify-between p-4 border-b border-gray-800">
         <TouchableOpacity onPress={() => navigation.navigate('Settings')}>
-          <AntDesign name="arrowleft" size={24} color="white" />
+          <AntDesign name="arrow-left" size={24} color="white" />
         </TouchableOpacity>
         <Text className="text-white text-xl font-semibold">Providers</Text>
         <TouchableOpacity onPress={handleRefresh}>
@@ -424,11 +488,8 @@ const Extensions = ({navigation}: Props) => {
         </TouchableOpacity>
       </View>
       {/* Provider list */}
-      <FlatList
-        data={currentData}
-        keyExtractor={(item, index) => item?.value || `provider-${index}`}
-        renderItem={renderProviderCard}
-        className="flex-1 mt-4"
+      <ScrollView
+        style={{flex: 1, marginTop: 16}}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -437,8 +498,8 @@ const Extensions = ({navigation}: Props) => {
             tintColor={primary}
             progressBackgroundColor="black"
           />
-        }
-        ListEmptyComponent={
+        }>
+        {currentData.length === 0 ? (
           <View className="flex-1 justify-center items-center py-20">
             <MaterialCommunityIcons
               name="package-variant"
@@ -456,8 +517,14 @@ const Extensions = ({navigation}: Props) => {
                 : 'Pull to refresh to check for available providers'}
             </Text>
           </View>
-        }
-      />
+        ) : (
+          currentData.map((item, index) => (
+            <View key={item?.value || `provider-${index}`}>
+              {renderProviderCard({item, index})}
+            </View>
+          ))
+        )}
+      </ScrollView>
     </View>
   );
 };

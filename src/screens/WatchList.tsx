@@ -1,5 +1,13 @@
-import {View, Text, Platform, Image, Dimensions, FlatList} from 'react-native';
-import React from 'react';
+import {
+  View,
+  Text,
+  Platform,
+  Image,
+  Dimensions,
+  FlatList,
+  Pressable,
+} from 'react-native';
+import React, {useCallback, useState} from 'react';
 import {useNavigation} from '@react-navigation/native';
 import {WatchListStackParamList} from '../App';
 import {NativeStackNavigationProp} from '@react-navigation/native-stack';
@@ -8,41 +16,117 @@ import useThemeStore from '../lib/zustand/themeStore';
 import useWatchListStore from '../lib/zustand/watchListStore';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import {StatusBar} from 'expo-status-bar';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+} from 'react-native-reanimated';
 
-const WatchList = () => {
-  const {primary} = useThemeStore(state => state);
-  const navigation =
-    useNavigation<NativeStackNavigationProp<WatchListStackParamList>>();
-  const {watchList} = useWatchListStore(state => state);
+// TV-specific constants
+const isTV = Platform.isTV;
+const TV_FOCUS_SCALE = 1.03;
 
-  // Calculate how many items can fit per row
-  const screenWidth = Dimensions.get('window').width;
-  const containerPadding = 12; // from the px-3 class (3*4=12)
-  const itemSpacing = 10;
+// TV-optimized watchlist item component
+const TVWatchListItem = ({
+  item,
+  index,
+  itemWidth,
+  primary,
+  onPress,
+  // numColumns,
+}: {
+  item: any;
+  index: number;
+  itemWidth: number;
+  primary: string;
+  onPress: () => void;
+  numColumns: number;
+}) => {
+  const scale = useSharedValue(1);
+  const borderOpacity = useSharedValue(0);
 
-  // Available width for the grid
-  const availableWidth = screenWidth - containerPadding * 2;
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{scale: scale.value}],
+  }));
 
-  // Determine number of columns and adjusted item width
-  const numColumns = Math.floor(
-    (availableWidth + itemSpacing) / (100 + itemSpacing),
-  );
+  const borderAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: borderOpacity.value,
+  }));
 
-  // Calculate the actual item width to fill the space exactly
-  const itemWidth =
-    (availableWidth - itemSpacing * (numColumns - 1)) / numColumns;
+  const handleFocus = useCallback(() => {
+    scale.value = withTiming(TV_FOCUS_SCALE, {duration: 150});
+    borderOpacity.value = withTiming(1, {duration: 150});
+  }, []);
 
-  // Render each grid item
-  const renderItem = ({item, index}: {item: any; index: number}) => (
+  const handleBlur = useCallback(() => {
+    scale.value = withTiming(1, {duration: 150});
+    borderOpacity.value = withTiming(0, {duration: 150});
+  }, []);
+
+  if (isTV) {
+    return (
+      <View
+        style={{
+          width: itemWidth,
+          marginBottom: 24,
+          alignItems: 'center',
+          paddingVertical: 14,
+        }}>
+        <Pressable
+          onPress={onPress}
+          onFocus={handleFocus}
+          onBlur={handleBlur}
+          hasTVPreferredFocus={index === 0}
+          isTVSelectable={true}>
+          <Animated.View style={[animatedStyle, {alignItems: 'center'}]}>
+            <View style={{position: 'relative', width: itemWidth}}>
+              <Image
+                style={{
+                  width: itemWidth,
+                  height: itemWidth * 1.5,
+                  borderRadius: 8,
+                }}
+                source={{uri: item.poster}}
+              />
+              <Animated.View
+                style={[
+                  {
+                    position: 'absolute',
+                    top: -3,
+                    left: -3,
+                    right: -3,
+                    bottom: -3,
+                    borderWidth: 3,
+                    borderColor: primary,
+                    borderRadius: 11,
+                  },
+                  borderAnimatedStyle,
+                ]}
+                pointerEvents="none"
+              />
+            </View>
+            <Text
+              style={{
+                color: 'white',
+                fontSize: 14,
+                textAlign: 'center',
+                marginTop: 8,
+                width: itemWidth - 16,
+              }}
+              numberOfLines={2}>
+              {item.title}
+            </Text>
+          </Animated.View>
+        </Pressable>
+      </View>
+    );
+  }
+
+  // Non-TV rendering
+  return (
     <TouchableOpacity
       key={item.link + index}
-      onPress={() =>
-        navigation.navigate('Info', {
-          link: item.link,
-          provider: item.provider,
-          poster: item.poster,
-        })
-      }
+      onPress={onPress}
       style={{
         width: itemWidth,
         marginBottom: 16,
@@ -67,6 +151,54 @@ const WatchList = () => {
       </View>
     </TouchableOpacity>
   );
+};
+
+const WatchList = () => {
+  const {primary} = useThemeStore(state => state);
+  const navigation =
+    useNavigation<NativeStackNavigationProp<WatchListStackParamList>>();
+  const {watchList} = useWatchListStore(state => state);
+  const [contentWidth, setContentWidth] = useState(Dimensions.get('window').width);
+
+  // Calculate how many items can fit per row
+  const containerPadding = isTV ? 48 : 12; // Larger padding for TV to account for scale
+  const itemSpacing = 10;
+
+  // Available width for the grid
+  const availableWidth = contentWidth - containerPadding * 2;
+
+  // Determine number of columns and adjusted item width
+  const numColumns = isTV
+    ? Math.max(
+        3,
+        Math.floor((availableWidth + itemSpacing) / (150 + itemSpacing)),
+      )
+    : Math.floor((availableWidth + itemSpacing) / (100 + itemSpacing));
+
+  // Calculate the actual item width to fill the space exactly
+  const itemWidth =
+    (availableWidth - itemSpacing * (numColumns - 1)) / numColumns;
+
+  // Render each grid item
+  const renderItem = useCallback(
+    ({item, index}: {item: any; index: number}) => (
+      <TVWatchListItem
+        item={item}
+        index={index}
+        itemWidth={itemWidth}
+        primary={primary}
+        numColumns={numColumns}
+        onPress={() =>
+          navigation.navigate('Info', {
+            link: item.link,
+            provider: item.provider,
+            poster: item.poster,
+          })
+        }
+      />
+    ),
+    [itemWidth, primary, navigation, numColumns],
+  );
 
   return (
     <View className="flex-1 bg-black justify-center items-center">
@@ -79,15 +211,28 @@ const WatchList = () => {
         }}
       />
 
-      <View className="flex-1 w-full px-3">
+      <View 
+        className="flex-1 w-full px-3"
+        onLayout={(event) => {
+          const {width} = event.nativeEvent.layout;
+          setContentWidth(width);
+        }}>
         <Text
-          className="text-2xl text-center font-bold mb-6 mt-4"
-          style={{color: primary}}>
+          style={{
+            color: primary,
+            fontSize: isTV ? 32 : 24,
+            fontWeight: 'bold',
+            marginBottom: 24,
+            marginTop: 16,
+            textAlign: 'center',
+          }}
+          className={isTV ? '' : 'text-2xl text-center font-bold mb-6 mt-4'}>
           Watchlist
         </Text>
 
         {watchList.length > 0 ? (
           <FlatList
+            key={`grid-${numColumns}`}
             data={watchList}
             renderItem={renderItem}
             keyExtractor={(item, index) => item.link + index}
@@ -98,18 +243,26 @@ const WatchList = () => {
             }}
             contentContainerStyle={{
               paddingBottom: 50,
+              paddingHorizontal: isTV ? 16 : 0,
             }}
             showsVerticalScrollIndicator={false}
+            removeClippedSubviews={!isTV}
           />
         ) : (
           <View className="flex-1">
             <View className="items-center justify-center mt-20 mb-12">
               <MaterialCommunityIcons
                 name="playlist-remove"
-                size={80}
+                size={isTV ? 100 : 80}
                 color={primary}
               />
-              <Text className="text-white/70 text-base mt-4 text-center">
+              <Text
+                style={{
+                  color: 'rgba(255,255,255,0.7)',
+                  fontSize: isTV ? 18 : 14,
+                  marginTop: 16,
+                  textAlign: 'center',
+                }}>
                 Your WatchList is empty
               </Text>
             </View>

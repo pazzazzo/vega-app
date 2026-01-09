@@ -6,6 +6,7 @@ import {
   Dimensions,
   ToastAndroid,
   View,
+  Platform,
 } from 'react-native';
 import React, {useEffect, useRef} from 'react';
 import {Stream} from '../lib/providers/types';
@@ -17,6 +18,161 @@ import {Clipboard} from 'react-native';
 import useThemeStore from '../lib/zustand/themeStore';
 import {TextTrackType} from 'react-native-video';
 import {settingsStorage} from '../lib/storage';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+} from 'react-native-reanimated';
+
+const isTV = Platform.isTV;
+
+// TV Focusable Tab Button
+const TVFocusableTab = ({
+  label,
+  isActive,
+  onPress,
+  primary,
+  hasTVPreferredFocus = false,
+}: {
+  label: string;
+  isActive: boolean;
+  onPress: () => void;
+  primary: string;
+  hasTVPreferredFocus?: boolean;
+}) => {
+  const backgroundColor = useSharedValue(
+    isActive ? 'rgba(255,255,255,0.1)' : 'transparent',
+  );
+  const borderBottomWidth = useSharedValue(isActive ? 2 : 0);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    backgroundColor: backgroundColor.value,
+    borderBottomWidth: borderBottomWidth.value,
+    borderBottomColor: 'white',
+  }));
+
+  if (isTV) {
+    return (
+      <Pressable
+        onPress={onPress}
+        onFocus={() => {
+          backgroundColor.value = withTiming('rgba(255,255,255,0.2)', {
+            duration: 150,
+          });
+        }}
+        onBlur={() => {
+          backgroundColor.value = withTiming(
+            isActive ? 'rgba(255,255,255,0.1)' : 'transparent',
+            {duration: 150},
+          );
+        }}
+        hasTVPreferredFocus={hasTVPreferredFocus}
+        isTVSelectable={true}>
+        <Animated.View
+          style={[
+            animatedStyle,
+            {
+              paddingVertical: 8,
+              paddingHorizontal: 16,
+              borderRadius: 8,
+            },
+          ]}>
+          <Text
+            style={{
+              color: isActive ? primary : 'white',
+              fontSize: 18,
+              fontWeight: '600',
+              textAlign: 'center',
+            }}>
+            {label}
+          </Text>
+        </Animated.View>
+      </Pressable>
+    );
+  }
+
+  return (
+    <Text
+      className={'text-lg p-1 font-semibold text-center'}
+      style={{
+        color: isActive ? primary : 'white',
+        borderBottomWidth: isActive ? 2 : 0,
+        borderBottomColor: isActive ? 'white' : 'transparent',
+      }}
+      onPress={onPress}>
+      {label}
+    </Text>
+  );
+};
+
+// TV Focusable Item
+const TVFocusableItem = ({
+  label,
+  onPress,
+  onLongPress,
+  primary,
+  index,
+  isFirstInList = false,
+}: {
+  label: string;
+  onPress: () => void;
+  onLongPress: () => void;
+  primary: string;
+  index: number;
+  isFirstInList?: boolean;
+}) => {
+  const backgroundColor = useSharedValue('rgba(255,255,255,0.3)');
+  const borderLeftWidth = useSharedValue(0);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    backgroundColor: backgroundColor.value,
+    borderLeftWidth: borderLeftWidth.value,
+    borderLeftColor: primary,
+  }));
+
+  if (isTV) {
+    return (
+      <Pressable
+        onPress={onPress}
+        onLongPress={onLongPress}
+        onFocus={() => {
+          backgroundColor.value = withTiming('rgba(255,255,255,0.5)', {
+            duration: 150,
+          });
+          borderLeftWidth.value = withTiming(4, {duration: 150});
+        }}
+        onBlur={() => {
+          backgroundColor.value = withTiming('rgba(255,255,255,0.3)', {
+            duration: 150,
+          });
+          borderLeftWidth.value = withTiming(0, {duration: 150});
+        }}
+        hasTVPreferredFocus={isFirstInList && index === 0}
+        isTVSelectable={true}>
+        <Animated.View
+          style={[
+            animatedStyle,
+            {
+              padding: 8,
+              borderRadius: 8,
+              marginVertical: 4,
+            },
+          ]}>
+          <Text style={{color: 'white', fontSize: 16}}>{label}</Text>
+        </Animated.View>
+      </Pressable>
+    );
+  }
+
+  return (
+    <TouchableOpacity
+      className="p-2 bg-white/30 rounded-md my-1"
+      onPress={onPress}
+      onLongPress={onLongPress}>
+      <Text style={{color: 'white'}}>{label}</Text>
+    </TouchableOpacity>
+  );
+};
 
 type Props = {
   data: Stream[];
@@ -66,7 +222,7 @@ const DownloadBottomSheet = ({
           <BottomSheet
             // detached={true}
             enablePanDownToClose={true}
-            snapPoints={['30%', 450]}
+            snapPoints={isTV ? ['100%'] : ['30%', 450]}
             containerStyle={{marginHorizontal: 5}}
             ref={bottomSheetRef}
             backgroundStyle={{backgroundColor: '#1a1a1a'}}
@@ -83,28 +239,19 @@ const DownloadBottomSheet = ({
                   subtitle.length > 0 &&
                   subtitle[0] !== undefined && (
                     <View className="flex-row items-center justify-center gap-x-3 w-full my-5">
-                      <Text
-                        className={'text-lg p-1 font-semibold text-center'}
-                        style={{
-                          color: activeTab === 1 ? primary : 'white',
-                          borderBottomWidth: activeTab === 1 ? 2 : 0,
-                          borderBottomColor:
-                            activeTab === 1 ? 'white' : 'transparent',
-                        }}
-                        onPress={() => setActiveTab(1)}>
-                        Video
-                      </Text>
-                      <Text
-                        className={'text-lg p-1 font-semibold text-center'}
-                        style={{
-                          color: activeTab === 2 ? primary : 'white',
-                          borderBottomWidth: activeTab === 2 ? 2 : 0,
-                          borderBottomColor:
-                            activeTab === 2 ? 'white' : 'transparent',
-                        }}
-                        onPress={() => setActiveTab(2)}>
-                        Subtitle
-                      </Text>
+                      <TVFocusableTab
+                        label="Video"
+                        isActive={activeTab === 1}
+                        onPress={() => setActiveTab(1)}
+                        primary={primary}
+                        hasTVPreferredFocus={!loading && isTV}
+                      />
+                      <TVFocusableTab
+                        label="Subtitle"
+                        isActive={activeTab === 2}
+                        onPress={() => setActiveTab(2)}
+                        primary={primary}
+                      />
                     </View>
                   )}
                 {loading
@@ -117,70 +264,80 @@ const DownloadBottomSheet = ({
                       />
                     ))
                   : activeTab === 1
-                  ? data.map(item => (
-                      <TouchableOpacity
-                        className="p-2 bg-white/30 rounded-md my-1"
-                        key={item.link}
-                        onLongPress={() => {
-                          if (settingsStorage.isHapticFeedbackEnabled()) {
-                            RNReactNativeHapticFeedback.trigger('effectTick', {
-                              enableVibrateFallback: true,
-                              ignoreAndroidSystemSettings: false,
-                            });
+                    ? data.map((item, index) => (
+                        <TVFocusableItem
+                          key={item.link}
+                          label={item.server}
+                          index={index}
+                          isFirstInList={
+                            !subtitle ||
+                            subtitle.length === 0 ||
+                            subtitle[0] === undefined
                           }
-                          Clipboard.setString(item.link);
-                          ToastAndroid.show('Link copied', ToastAndroid.SHORT);
-                        }}
-                        onPress={() => {
-                          onPressVideo(item);
-                          bottomSheetRef.current?.close();
-                        }}>
-                        <Text style={{color: 'white'}}>{item.server}</Text>
-                      </TouchableOpacity>
-                    ))
-                  : subtitle.length > 0
-                  ? subtitle.map(
-                      subs =>
-                        subs?.map(item => (
-                          <TouchableOpacity
-                            className="p-2 bg-white/30 rounded-md my-1"
-                            key={item.uri}
-                            onLongPress={() => {
-                              if (settingsStorage.isHapticFeedbackEnabled()) {
-                                RNReactNativeHapticFeedback.trigger(
-                                  'effectTick',
-                                  {
-                                    enableVibrateFallback: true,
-                                    ignoreAndroidSystemSettings: false,
-                                  },
-                                );
-                              }
-                              Clipboard.setString(item.uri);
-                              ToastAndroid.show(
-                                'Link copied',
-                                ToastAndroid.SHORT,
+                          onPress={() => {
+                            onPressVideo(item);
+                            bottomSheetRef.current?.close();
+                          }}
+                          onLongPress={() => {
+                            if (settingsStorage.isHapticFeedbackEnabled()) {
+                              RNReactNativeHapticFeedback.trigger(
+                                'effectTick',
+                                {
+                                  enableVibrateFallback: true,
+                                  ignoreAndroidSystemSettings: false,
+                                },
                               );
-                            }}
-                            onPress={() => {
-                              onPressSubs({
-                                server: 'Subtitles',
-                                link: item.uri,
-                                type:
-                                  item.type === TextTrackType.VTT
-                                    ? 'vtt'
-                                    : 'srt',
-                                title: item.title,
-                              });
-                              bottomSheetRef.current?.close();
-                            }}>
-                            <Text style={{color: 'white'}}>
-                              {item.language}
-                              {' - '} {item.title}
-                            </Text>
-                          </TouchableOpacity>
-                        )),
-                    )
-                  : null}
+                            }
+                            Clipboard.setString(item.link);
+                            ToastAndroid.show(
+                              'Link copied',
+                              ToastAndroid.SHORT,
+                            );
+                          }}
+                          primary={primary}
+                        />
+                      ))
+                    : subtitle.length > 0
+                      ? subtitle.map(subs =>
+                          subs?.map((item, index) => (
+                            <TVFocusableItem
+                              key={item.uri}
+                              label={`${item.language} - ${item.title}`}
+                              index={index}
+                              isFirstInList={true}
+                              onPress={() => {
+                                onPressSubs({
+                                  server: 'Subtitles',
+                                  link: item.uri,
+                                  type:
+                                    item.type === TextTrackType.VTT
+                                      ? 'vtt'
+                                      : 'srt',
+                                  title: item.title,
+                                });
+                                bottomSheetRef.current?.close();
+                              }}
+                              onLongPress={() => {
+                                if (settingsStorage.isHapticFeedbackEnabled()) {
+                                  RNReactNativeHapticFeedback.trigger(
+                                    'effectTick',
+                                    {
+                                      enableVibrateFallback: true,
+                                      ignoreAndroidSystemSettings: false,
+                                    },
+                                  );
+                                }
+                                Clipboard.setString(item.uri);
+                                ToastAndroid.show(
+                                  'Link copied',
+                                  ToastAndroid.SHORT,
+                                );
+                              }}
+                              primary={primary}
+                            />
+                          )),
+                        )
+                      : null}
                 {data.length === 0 && !loading && (
                   <Text className="text-red-500 text-lg text-center">
                     No server found

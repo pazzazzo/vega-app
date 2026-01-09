@@ -1,9 +1,16 @@
-import {View, Text, Image, Platform, TouchableOpacity} from 'react-native';
+import {
+  View,
+  Text,
+  Image,
+  Platform,
+  TouchableOpacity,
+  Pressable,
+} from 'react-native';
 import requestStoragePermission from '../../lib/file/getStoragePermission';
 import * as FileSystem from 'expo-file-system';
 import {downloadFolder} from '../../lib/constants';
 import * as VideoThumbnails from 'expo-video-thumbnails';
-import React, {useState, useEffect} from 'react';
+import React, {useState, useEffect, useCallback} from 'react';
 import {settingsStorage, downloadsStorage} from '../../lib/storage';
 import useThemeStore from '../../lib/zustand/themeStore';
 import * as RNFS from '@dr.pogodin/react-native-fs';
@@ -13,6 +20,13 @@ import {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import {RootStackParamList} from '../../App';
 import RNReactNativeHapticFeedback from 'react-native-haptic-feedback';
 import {FlashList} from '@shopify/flash-list';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+} from 'react-native-reanimated';
+
+const isTV = Platform.isTV;
 
 // Define supported video extensions
 const VIDEO_EXTENSIONS = [
@@ -296,15 +310,205 @@ const Downloads = () => {
     return Object.values(groups);
   };
 
+  // TV Focusable Download Item Component
+  const TVFocusableDownloadItem = useCallback(
+    ({item, index}: {item: MediaGroup; index: number}) => {
+      const borderWidth = useSharedValue(0);
+
+      const animatedStyle = useAnimatedStyle(() => ({
+        borderWidth: borderWidth.value,
+        borderColor: primary,
+      }));
+
+      const handlePress = () => {
+        if (isSelecting) {
+          if (settingsStorage.isHapticFeedbackEnabled()) {
+            RNReactNativeHapticFeedback.trigger('effectTick', {
+              enableVibrateFallback: true,
+              ignoreAndroidSystemSettings: false,
+            });
+          }
+          if (groupSelected.includes(item.episodes[0].uri)) {
+            setGroupSelected(
+              groupSelected.filter(f => f !== item.episodes[0].uri),
+            );
+          } else {
+            setGroupSelected([...groupSelected, item.episodes[0].uri]);
+          }
+          if (
+            groupSelected.length === 1 &&
+            groupSelected[0] === item.episodes[0].uri
+          ) {
+            setIsSelecting(false);
+            setGroupSelected([]);
+          }
+        } else {
+          if (item.isMovie) {
+            const file = item.episodes[0];
+            const fileName = file.uri.split('/').pop() || '';
+            navigation.navigate('Player', {
+              episodeList: [{title: fileName, link: file.uri}],
+              linkIndex: 0,
+              type: '',
+              directUrl: file.uri,
+              primaryTitle: item.title,
+              poster: {},
+              providerValue: 'vega',
+            });
+          } else {
+            navigation.navigate('TabStack', {
+              screen: 'SettingsStack',
+              params: {
+                screen: 'WatchHistoryStack',
+                params: {
+                  screen: 'SeriesEpisodes',
+                  params: {
+                    episodes: item.episodes as any,
+                    series: item.title,
+                    thumbnails: thumbnails,
+                  },
+                },
+              },
+            });
+          }
+        }
+      };
+
+      const handleLongPress = () => {
+        if (settingsStorage.isHapticFeedbackEnabled()) {
+          RNReactNativeHapticFeedback.trigger('effectTick', {
+            enableVibrateFallback: true,
+            ignoreAndroidSystemSettings: false,
+          });
+        }
+        setGroupSelected(item.episodes.map(ep => ep.uri));
+        setIsSelecting(true);
+      };
+
+      if (isTV) {
+        return (
+          <Pressable
+            onPress={handlePress}
+            onLongPress={handleLongPress}
+            onFocus={() => {
+              borderWidth.value = withTiming(3, {duration: 150});
+            }}
+            onBlur={() => {
+              borderWidth.value = withTiming(0, {duration: 150});
+            }}
+            hasTVPreferredFocus={index === 0}
+            isTVSelectable={true}
+            style={{flex: 1, margin: 4}}>
+            <Animated.View
+              style={[
+                animatedStyle,
+                {
+                  borderRadius: 8,
+                  overflow: 'hidden',
+                  backgroundColor:
+                    isSelecting && groupSelected.includes(item.episodes[0].uri)
+                      ? '#3A3A3A'
+                      : '#262626',
+                },
+              ]}>
+              <View style={{position: 'relative', aspectRatio: 2 / 3}}>
+                {item.thumbnail ? (
+                  <Image
+                    source={{uri: item.thumbnail}}
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      borderTopLeftRadius: 8,
+                      borderTopRightRadius: 8,
+                    }}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <View
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      backgroundColor: '#3A3A3A',
+                      borderTopLeftRadius: 8,
+                      borderTopRightRadius: 8,
+                    }}
+                  />
+                )}
+                <View
+                  style={{
+                    position: 'absolute',
+                    bottom: 0,
+                    left: 0,
+                    right: 0,
+                    backgroundColor: 'rgba(0,0,0,0.5)',
+                    padding: 4,
+                  }}>
+                  <Text
+                    style={{color: 'white', fontSize: 12}}
+                    numberOfLines={1}>
+                    {item.title}
+                  </Text>
+                  {!item.isMovie && (
+                    <Text style={{color: 'white', fontSize: 12, opacity: 0.7}}>
+                      {item.episodes.length} episodes
+                    </Text>
+                  )}
+                </View>
+              </View>
+            </Animated.View>
+          </Pressable>
+        );
+      }
+
+      return (
+        <TouchableOpacity
+          className={`flex-1 m-0.5 rounded-lg overflow-hidden ${
+            isSelecting && groupSelected.includes(item.episodes[0].uri)
+              ? 'bg-quaternary'
+              : 'bg-tertiary'
+          }`}
+          onLongPress={handleLongPress}
+          onPress={handlePress}>
+          <View className="relative aspect-[2/3]">
+            {item.thumbnail ? (
+              <Image
+                source={{uri: item.thumbnail}}
+                className="w-full h-full rounded-t-lg"
+                resizeMode="cover"
+              />
+            ) : (
+              <View className="w-full h-full bg-quaternary rounded-t-lg" />
+            )}
+            <View className="absolute bottom-0 left-0 right-0 bg-black/50 p-1">
+              <Text className="text-white text-xs" numberOfLines={1}>
+                {item.title}
+              </Text>
+              {!item.isMovie && (
+                <Text className="text-white text-xs opacity-70">
+                  {item.episodes.length} episodes
+                </Text>
+              )}
+            </View>
+          </View>
+        </TouchableOpacity>
+      );
+    },
+    [isSelecting, groupSelected, primary, navigation, thumbnails],
+  );
+
   return (
-    <View className="mt-14 px-2 w-full h-full">
+    <View
+      className="mt-14 px-2 w-full h-full"
+      style={isTV ? {paddingHorizontal: 24, marginTop: 40} : undefined}>
       <View className="flex-row justify-between items-center mb-4">
-        <Text className="text-2xl">Downloads</Text>
+        <Text style={{fontSize: isTV ? 28 : 24, color: 'white'}}>
+          Downloads
+        </Text>
         <View className="flex-row gap-x-7 items-center">
           {isSelecting && (
             <MaterialCommunityIcons
               name="close"
-              size={28}
+              size={isTV ? 32 : 28}
               color={primary}
               onPress={() => {
                 setGroupSelected([]);
@@ -315,7 +519,7 @@ const Downloads = () => {
           {isSelecting && groupSelected.length > 0 && (
             <MaterialCommunityIcons
               name="delete-outline"
-              size={28}
+              size={isTV ? 32 : 28}
               color={primary}
               onPress={deleteFiles}
             />
@@ -325,108 +529,24 @@ const Downloads = () => {
 
       <FlashList
         data={groupMediaFiles()}
-        numColumns={3}
+        numColumns={isTV ? 5 : 3}
         estimatedItemSize={150}
         ListEmptyComponent={() =>
           !loading && (
             <View className="flex-1 justify-center items-center mt-10">
-              <Text className="text-center text-lg">Looks Empty Here!</Text>
+              <Text
+                style={{
+                  textAlign: 'center',
+                  fontSize: isTV ? 18 : 16,
+                  color: 'white',
+                }}>
+                Looks Empty Here!
+              </Text>
             </View>
           )
         }
-        renderItem={({item}) => (
-          <TouchableOpacity
-            className={`flex-1 m-0.5 rounded-lg overflow-hidden ${
-              isSelecting && groupSelected.includes(item.episodes[0].uri)
-                ? 'bg-quaternary'
-                : 'bg-tertiary'
-            }`}
-            onLongPress={() => {
-              if (settingsStorage.isHapticFeedbackEnabled()) {
-                RNReactNativeHapticFeedback.trigger('effectTick', {
-                  enableVibrateFallback: true,
-                  ignoreAndroidSystemSettings: false,
-                });
-              }
-              setGroupSelected(item.episodes.map(ep => ep.uri));
-              setIsSelecting(true);
-            }}
-            onPress={() => {
-              if (isSelecting) {
-                if (settingsStorage.isHapticFeedbackEnabled()) {
-                  RNReactNativeHapticFeedback.trigger('effectTick', {
-                    enableVibrateFallback: true,
-                    ignoreAndroidSystemSettings: false,
-                  });
-                }
-                if (groupSelected.includes(item.episodes[0].uri)) {
-                  setGroupSelected(
-                    groupSelected.filter(f => f !== item.episodes[0].uri),
-                  );
-                } else {
-                  setGroupSelected([...groupSelected, item.episodes[0].uri]);
-                }
-                if (
-                  groupSelected.length === 1 &&
-                  groupSelected[0] === item.episodes[0].uri
-                ) {
-                  setIsSelecting(false);
-                  setGroupSelected([]);
-                }
-              } else {
-                // Direct play for movies, navigate to episodes for series
-                if (item.isMovie) {
-                  const file = item.episodes[0];
-                  const fileName = file.uri.split('/').pop() || '';
-                  navigation.navigate('Player', {
-                    episodeList: [{title: fileName, link: file.uri}],
-                    linkIndex: 0,
-                    type: '',
-                    directUrl: file.uri,
-                    primaryTitle: item.title,
-                    poster: {},
-                    providerValue: 'vega',
-                  });
-                } else {
-                  navigation.navigate('TabStack', {
-                    screen: 'SettingsStack',
-                    params: {
-                      screen: 'WatchHistoryStack',
-                      params: {
-                        screen: 'SeriesEpisodes',
-                        params: {
-                          episodes: item.episodes as any,
-                          series: item.title,
-                          thumbnails: thumbnails,
-                        },
-                      },
-                    },
-                  });
-                }
-              }
-            }}>
-            <View className="relative aspect-[2/3]">
-              {item.thumbnail ? (
-                <Image
-                  source={{uri: item.thumbnail}}
-                  className="w-full h-full rounded-t-lg"
-                  resizeMode="cover"
-                />
-              ) : (
-                <View className="w-full h-full bg-quaternary rounded-t-lg" />
-              )}
-              <View className="absolute bottom-0 left-0 right-0 bg-black/50 p-1">
-                <Text className="text-white text-xs" numberOfLines={1}>
-                  {item.title}
-                </Text>
-                {!item.isMovie && (
-                  <Text className="text-white text-xs opacity-70">
-                    {item.episodes.length} episodes
-                  </Text>
-                )}
-              </View>
-            </View>
-          </TouchableOpacity>
+        renderItem={({item, index}) => (
+          <TVFocusableDownloadItem item={item} index={index} />
         )}
       />
     </View>

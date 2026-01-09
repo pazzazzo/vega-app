@@ -6,6 +6,8 @@ import {
   Linking,
   Alert,
   Switch,
+  Platform,
+  Pressable,
 } from 'react-native';
 // import pkg from '../../../package.json';
 import React, {useState} from 'react';
@@ -16,6 +18,181 @@ import {MaterialCommunityIcons} from '@expo/vector-icons';
 import useThemeStore from '../../lib/zustand/themeStore';
 import * as Application from 'expo-application';
 import {notificationService} from '../../lib/services/Notification';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+} from 'react-native-reanimated';
+
+const isTV = Platform.isTV;
+
+// TV Focusable Switch Row Component
+const TVFocusableSwitchRow = ({
+  label,
+  description,
+  value,
+  onValueChange,
+  primary,
+  isFirst = false,
+}: {
+  label: string;
+  description?: string;
+  value: boolean;
+  onValueChange: () => void;
+  primary: string;
+  isFirst?: boolean;
+}) => {
+  const backgroundColor = useSharedValue('transparent');
+  const borderLeftWidth = useSharedValue(0);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    backgroundColor: backgroundColor.value,
+    borderLeftWidth: borderLeftWidth.value,
+    borderLeftColor: primary,
+  }));
+
+  if (isTV) {
+    return (
+      <Pressable
+        onPress={onValueChange}
+        onFocus={() => {
+          backgroundColor.value = withTiming('rgba(255,255,255,0.1)', {duration: 150});
+          borderLeftWidth.value = withTiming(4, {duration: 150});
+        }}
+        onBlur={() => {
+          backgroundColor.value = withTiming('transparent', {duration: 150});
+          borderLeftWidth.value = withTiming(0, {duration: 150});
+        }}
+        hasTVPreferredFocus={isFirst}
+        isTVSelectable={true}
+        style={{marginBottom: 16}}>
+        <Animated.View
+          style={[
+            animatedStyle,
+            {
+              backgroundColor: 'rgba(255,255,255,0.1)',
+              padding: 16,
+              borderRadius: 8,
+              flexDirection: 'row',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+            },
+          ]}>
+          <View style={{flex: 1, marginRight: 8}}>
+            <Text style={{color: 'white', fontSize: 16}}>{label}</Text>
+            {description && (
+              <Text style={{color: 'gray', fontSize: 14, marginTop: 4}}>
+                {description}
+              </Text>
+            )}
+          </View>
+          <Switch
+            value={value}
+            onValueChange={onValueChange}
+            thumbColor={value ? primary : 'gray'}
+          />
+        </Animated.View>
+      </Pressable>
+    );
+  }
+
+  return (
+    <View
+      className={`bg-white/10 ${description ? 'p-3' : 'p-4'} rounded-lg flex-row justify-between items-center mb-4`}>
+      <View className={description ? 'flex-1 mr-2' : undefined}>
+        <Text className="text-white text-base">{label}</Text>
+        {description && (
+          <Text className="text-gray-400 text-sm">{description}</Text>
+        )}
+      </View>
+      <Switch
+        value={value}
+        onValueChange={onValueChange}
+        thumbColor={value ? primary : 'gray'}
+      />
+    </View>
+  );
+};
+
+// TV Focusable Button Component
+const TVFocusableButton = ({
+  onPress,
+  icon,
+  label,
+  disabled,
+  primary,
+}: {
+  onPress: () => void;
+  icon: React.ReactNode;
+  label: string;
+  disabled?: boolean;
+  primary: string;
+}) => {
+  const backgroundColor = useSharedValue('transparent');
+  const borderLeftWidth = useSharedValue(0);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    backgroundColor: backgroundColor.value,
+    borderLeftWidth: borderLeftWidth.value,
+    borderLeftColor: primary,
+  }));
+
+  if (isTV) {
+    return (
+      <Pressable
+        onPress={onPress}
+        onFocus={() => {
+          backgroundColor.value = withTiming('rgba(255,255,255,0.1)', {duration: 150});
+          borderLeftWidth.value = withTiming(4, {duration: 150});
+        }}
+        onBlur={() => {
+          backgroundColor.value = withTiming('transparent', {duration: 150});
+          borderLeftWidth.value = withTiming(0, {duration: 150});
+        }}
+        isTVSelectable={!disabled}
+        style={{marginTop: 16, opacity: disabled ? 0.5 : 1}}>
+        <Animated.View
+          style={[
+            animatedStyle,
+            {
+              backgroundColor: 'rgba(255,255,255,0.1)',
+              padding: 16,
+              borderRadius: 8,
+              flexDirection: 'row',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+            },
+          ]}>
+            ]}
+            pointerEvents="none"
+          />
+          <View style={{flexDirection: 'row', alignItems: 'center'}}>
+            {icon}
+            <Text style={{color: 'white', fontSize: 16, marginLeft: 12}}>
+              {label}
+            </Text>
+          </View>
+          <Feather name="chevron-right" size={20} color="white" />
+        </Animated.View>
+      </Pressable>
+    );
+  }
+
+  return (
+    <TouchableNativeFeedback
+      onPress={onPress}
+      disabled={disabled}
+      background={TouchableNativeFeedback.Ripple('#ffffff20', false)}>
+      <View className="bg-white/10 p-4 rounded-lg flex-row justify-between items-center mt-4">
+        <View className="flex-row items-center space-x-3">
+          {icon}
+          <Text className="text-white text-base">{label}</Text>
+        </View>
+        <Feather name="chevron-right" size={20} color="white" />
+      </View>
+    </TouchableNativeFeedback>
+  );
+};
 
 // download update
 const downloadUpdate = async (url: string, name: string) => {
@@ -132,9 +309,18 @@ const About = () => {
   );
 
   return (
-    <View className="flex-1 bg-black mt-8">
+    <View
+      className="flex-1 bg-black mt-8"
+      style={isTV ? {paddingHorizontal: 24, marginTop: 20} : undefined}>
       <View className="px-4 py-3 border-b border-white/10">
-        <Text className="text-2xl font-bold text-white">About</Text>
+        <Text
+          style={{
+            fontSize: isTV ? 28 : 24,
+            fontWeight: 'bold',
+            color: 'white',
+          }}>
+          About
+        </Text>
         <Text className="text-gray-400 mt-1 text-sm">
           App information and updates
         </Text>
@@ -142,7 +328,7 @@ const About = () => {
 
       <View className="p-4 space-y-4 pb-24">
         {/* Version */}
-        <View className="bg-white/10 p-4 rounded-lg flex-row justify-between items-center">
+        <View className="bg-white/10 p-4 rounded-lg flex-row justify-between items-center mb-4">
           <Text className="text-white text-base">Version</Text>
           <Text className="text-white/70">
             v{Application.nativeApplicationVersion}
@@ -150,49 +336,39 @@ const About = () => {
         </View>
 
         {/* Auto Install Updates */}
-        <View className="bg-white/10 p-4 rounded-lg flex-row justify-between items-center">
-          <Text className="text-white text-base">Auto Install Updates</Text>
-          <Switch
-            value={autoDownload}
-            onValueChange={() => {
-              setAutoDownload(!autoDownload);
-              settingsStorage.setAutoDownloadEnabled(!autoDownload);
-            }}
-            thumbColor={autoDownload ? primary : 'gray'}
-          />
-        </View>
+        <TVFocusableSwitchRow
+          label="Auto Install Updates"
+          value={autoDownload}
+          onValueChange={() => {
+            setAutoDownload(!autoDownload);
+            settingsStorage.setAutoDownloadEnabled(!autoDownload);
+          }}
+          primary={primary}
+          isFirst={true}
+        />
 
         {/* Auto Check Updates */}
-        <View className="bg-white/10 p-3 rounded-lg flex-row justify-between items-center">
-          <View className="flex-1 mr-2">
-            <Text className="text-white text-base">Check Updates on Start</Text>
-            <Text className="text-gray-400 text-sm">
-              Automatically check for updates when app starts
-            </Text>
-          </View>
-          <Switch
-            value={autoCheckUpdate}
-            onValueChange={() => {
-              setAutoCheckUpdate(!autoCheckUpdate);
-              settingsStorage.setAutoCheckUpdateEnabled(!autoCheckUpdate);
-            }}
-            thumbColor={autoCheckUpdate ? primary : 'gray'}
-          />
-        </View>
+        <TVFocusableSwitchRow
+          label="Check Updates on Start"
+          description="Automatically check for updates when app starts"
+          value={autoCheckUpdate}
+          onValueChange={() => {
+            setAutoCheckUpdate(!autoCheckUpdate);
+            settingsStorage.setAutoCheckUpdateEnabled(!autoCheckUpdate);
+          }}
+          primary={primary}
+        />
 
         {/* Check Updates Button */}
-        <TouchableNativeFeedback
+        <TVFocusableButton
           onPress={() => checkForUpdate(setUpdateLoading, autoDownload, true)}
           disabled={updateLoading}
-          background={TouchableNativeFeedback.Ripple('#ffffff20', false)}>
-          <View className="bg-white/10 p-4 rounded-lg flex-row justify-between items-center mt-4">
-            <View className="flex-row items-center space-x-3">
-              <MaterialCommunityIcons name="update" size={22} color="white" />
-              <Text className="text-white text-base">Check for Updates</Text>
-            </View>
-            <Feather name="chevron-right" size={20} color="white" />
-          </View>
-        </TouchableNativeFeedback>
+          icon={
+            <MaterialCommunityIcons name="update" size={22} color="white" />
+          }
+          label="Check for Updates"
+          primary={primary}
+        />
       </View>
     </View>
   );

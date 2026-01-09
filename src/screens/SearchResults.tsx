@@ -4,6 +4,7 @@ import {
   ActivityIndicator,
   Text,
   View,
+  Platform,
 } from 'react-native';
 import Slider from '../components/Slider';
 import React, {useEffect, useState, useRef, useCallback, useMemo} from 'react';
@@ -12,6 +13,8 @@ import {SearchStackParamList} from '../App';
 import useThemeStore from '../lib/zustand/themeStore';
 import {providerManager} from '../lib/services/ProviderManager';
 import useContentStore from '../lib/zustand/contentStore';
+
+const isTV = Platform.isTV;
 
 type Props = NativeStackScreenProps<SearchStackParamList, 'SearchResults'>;
 
@@ -171,6 +174,7 @@ const SearchResults = ({route}: Props): React.ReactElement => {
           filter={route.params.filter}
           providerValue={item.value}
           isSearch={true}
+          hasTVPreferredFocus={isTV && index === 0 && !isEmptyResult}
         />
       );
     },
@@ -190,8 +194,12 @@ const SearchResults = ({route}: Props): React.ReactElement => {
   return (
     <SafeAreaView className="bg-black h-full w-full">
       <ScrollView showsVerticalScrollIndicator={false}>
-        <View className="mt-14 px-4 flex flex-row justify-between items-center gap-x-3">
-          <Text className="text-white text-2xl font-semibold ">
+        <View
+          className="px-4 flex flex-row justify-between items-center gap-x-3"
+          style={{marginTop: isTV ? 40 : 56}}>
+          <Text
+            className="text-white font-semibold"
+            style={{fontSize: isTV ? 28 : 24}}>
             {isAllLoaded ? 'Searched for' : 'Searching for'}{' '}
             <Text style={{color: primary}}>"{route?.params?.filter}"</Text>
           </Text>

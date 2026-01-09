@@ -9,8 +9,18 @@ import {
   TouchableOpacity,
   Modal,
   Pressable,
+  Platform,
 } from 'react-native';
 import React, {useCallback, useMemo, useRef, useState} from 'react';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+} from 'react-native-reanimated';
+
+// TV-specific constants
+const isTV = Platform.isTV;
+const TV_FOCUS_SCALE = 1.05;
 import {
   NativeStackNavigationProp,
   NativeStackScreenProps,
@@ -30,6 +40,79 @@ import useWatchListStore from '../../lib/zustand/watchListStore';
 import {useContentDetails} from '../../lib/hooks/useContentInfo';
 import {QueryErrorBoundary} from '../../components/ErrorBoundary';
 // import {BlurView} from 'expo-blur';
+
+// TV-optimized focusable button component
+const TVFocusableButton = ({
+  onPress,
+  children,
+  style,
+  className,
+  hasTVPreferredFocus = false,
+}: {
+  onPress: () => void;
+  children: React.ReactNode;
+  style?: any;
+  className?: string;
+  hasTVPreferredFocus?: boolean;
+}) => {
+  const scale = useSharedValue(1);
+  const borderOpacity = useSharedValue(0);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{scale: scale.value}],
+  }));
+
+  const borderAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: borderOpacity.value,
+  }));
+
+  const handleFocus = useCallback(() => {
+    scale.value = withTiming(TV_FOCUS_SCALE, {duration: 150});
+    borderOpacity.value = withTiming(1, {duration: 150});
+  }, []);
+
+  const handleBlur = useCallback(() => {
+    scale.value = withTiming(1, {duration: 150});
+    borderOpacity.value = withTiming(0, {duration: 150});
+  }, []);
+
+  if (isTV) {
+    return (
+      <Pressable
+        onPress={onPress}
+        onFocus={handleFocus}
+        onBlur={handleBlur}
+        hasTVPreferredFocus={hasTVPreferredFocus}
+        isTVSelectable={true}>
+        <Animated.View style={[animatedStyle, style]}>
+          {children}
+          <Animated.View
+            style={[
+              {
+                position: 'absolute',
+                top: -2,
+                left: -2,
+                right: -2,
+                bottom: -2,
+                borderWidth: 2,
+                borderColor: '#ffffff',
+                borderRadius: 8,
+              },
+              borderAnimatedStyle,
+            ]}
+            pointerEvents="none"
+          />
+        </Animated.View>
+      </Pressable>
+    );
+  }
+
+  return (
+    <TouchableOpacity onPress={onPress} style={style} className={className}>
+      {children}
+    </TouchableOpacity>
+  );
+};
 
 type Props = NativeStackScreenProps<HomeStackParamList, 'Info'>;
 export default function Info({route, navigation}: Props): React.JSX.Element {
@@ -58,7 +141,7 @@ export default function Info({route, navigation}: Props): React.JSX.Element {
   const [backgroundColor, setBackgroundColor] = useState('transparent');
   const [logoError, setLogoError] = useState(false);
 
-  const threeDotsRef = useRef<any>();
+  const threeDotsRef = useRef<any>(null);
 
   // Memoized values
   const [inLibrary, setInLibrary] = useState(() =>
@@ -181,16 +264,28 @@ export default function Info({route, navigation}: Props): React.JSX.Element {
           {error.message ||
             'An unexpected error occurred while loading the content'}
         </Text>
-        <TouchableOpacity
+        <TVFocusableButton
           onPress={handleRefresh}
-          className="bg-red-600 px-6 py-3 rounded-lg mb-4">
+          hasTVPreferredFocus={true}
+          style={{
+            backgroundColor: '#dc2626',
+            paddingHorizontal: 24,
+            paddingVertical: 12,
+            borderRadius: 8,
+            marginBottom: 16,
+          }}>
           <Text className="text-white font-semibold">Try Again</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
+        </TVFocusableButton>
+        <TVFocusableButton
           onPress={() => navigation.goBack()}
-          className="bg-gray-600 px-6 py-3 rounded-lg">
+          style={{
+            backgroundColor: '#4b5563',
+            paddingHorizontal: 24,
+            paddingVertical: 12,
+            borderRadius: 8,
+          }}>
           <Text className="text-white font-semibold">Go Back</Text>
-        </TouchableOpacity>
+        </TVFocusableButton>
       </View>
     );
   }
@@ -251,7 +346,7 @@ export default function Info({route, navigation}: Props): React.JSX.Element {
                     colors={['transparent', 'black']}
                     className="absolute h-full w-full"
                   />
-                  <View className="absolute bottom-0 right-0 w-screen flex-row justify-between items-baseline px-2">
+                  <View className="absolute bottom-0 right-0 w-full flex-row justify-between items-baseline px-2">
                     {(meta?.logo && !logoError) || infoLoading ? (
                       <Image
                         onError={() => setLogoError(true)}
@@ -325,12 +420,12 @@ export default function Info({route, navigation}: Props): React.JSX.Element {
                           .map((actor: string, index: number) => (
                             <Text
                               key={actor}
-                              className={`text-xs bg-tertiary p-1 px-2 rounded-md ${
+                              className={`text-xs bg-tertiary p-1 max-h-7 px-2 rounded-md ${
                                 index % 3 === 0
                                   ? 'text-red-500'
                                   : index % 3 === 1
-                                  ? 'text-blue-500'
-                                  : 'text-green-500'
+                                    ? 'text-blue-500'
+                                    : 'text-green-500'
                               }`}>
                               {actor}
                             </Text>
@@ -344,8 +439,8 @@ export default function Info({route, navigation}: Props): React.JSX.Element {
                                 index % 3 === 0
                                   ? 'text-red-500'
                                   : index % 3 === 1
-                                  ? 'text-blue-500'
-                                  : 'text-green-500'
+                                    ? 'text-blue-500'
+                                    : 'text-green-500'
                               }`}>
                               {actor}
                             </Text>
@@ -367,32 +462,37 @@ export default function Info({route, navigation}: Props): React.JSX.Element {
                     </Skeleton>
                     <View className="flex-row items-center gap-4 mb-1">
                       {meta?.trailers && meta?.trailers.length > 0 && (
-                        <MaterialCommunityIcons
-                          name="movie-open"
-                          size={25}
-                          color="rgb(156 163 175)"
+                        <Pressable
+                          className="focus:border-white border"
                           onPress={() =>
                             Linking.openURL(
                               'https://www.youtube.com/watch?v=' +
                                 meta?.trailers?.[0]?.source,
                             )
-                          }
-                        />
+                          }>
+                          <MaterialCommunityIcons
+                            name="movie-open"
+                            size={25}
+                            color="rgb(156 163 175)"
+                          />
+                        </Pressable>
                       )}
                       {inLibrary ? (
-                        <Ionicons
-                          name="bookmark"
-                          size={30}
-                          color={primary}
+                        <Pressable
                           onPress={() => removeLibrary()}
-                        />
+                          className="border focus:border-white">
+                          <Ionicons name="bookmark" size={30} color={primary} />
+                        </Pressable>
                       ) : (
-                        <Ionicons
-                          name="bookmark-outline"
-                          size={30}
-                          color={primary}
+                        <Pressable
                           onPress={() => addLibrary()}
-                        />
+                          className="focus:opacity-100 border focus:border-white">
+                          <Ionicons
+                            name="bookmark-outline"
+                            size={30}
+                            color={primary}
+                          />
+                        </Pressable>
                       )}
                       <TouchableOpacity
                         onPress={() => openThreeDotsMenu()}
@@ -467,16 +567,18 @@ export default function Info({route, navigation}: Props): React.JSX.Element {
                     </View>
                   </View>
                   <Skeleton show={infoLoading} colorMode="dark" height={85}>
-                    <Text className="text-gray-200 text-sm px-2 py-1 bg-tertiary rounded-md">
+                    <Text className="text-gray-200 text-sm px-2 py-1 bg-tertiary rounded-md flex flex-wrap">
                       {synopsis.length > 180 && !readMore
                         ? synopsis.slice(0, 180) + '... '
                         : synopsis}
                       {synopsis.length > 180 && !readMore && (
-                        <Text
-                          onPress={() => setReadMore(!readMore)}
-                          className="text-white font-extrabold text-xs px-2 bg-tertiary rounded-md">
-                          read more
-                        </Text>
+                        <Pressable
+                          onPress={() => setReadMore(true)}
+                          className="focus:scale-110 mt-7">
+                          <Text className="text-white font-extrabold text-xs bg-tertiary rounded-md">
+                            read more
+                          </Text>
+                        </Pressable>
                       )}
                     </Text>
                   </Skeleton>

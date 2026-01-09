@@ -25,7 +25,7 @@ import BootSplash from 'react-native-bootsplash';
 import {enableFreeze, enableScreens} from 'react-native-screens';
 import Preferences from './screens/settings/Preference';
 import useThemeStore from './lib/zustand/themeStore';
-import {Dimensions, LogBox, ViewStyle} from 'react-native';
+import {Dimensions, LogBox, ViewStyle, Platform} from 'react-native';
 import {EpisodeLink} from './lib/providers/types';
 import RNReactNativeHapticFeedback from 'react-native-haptic-feedback';
 import TabBarBackgound from './components/TabBarBackgound';
@@ -46,6 +46,10 @@ import {queryClient} from './lib/client';
 import GlobalErrorBoundary from './components/GlobalErrorBoundary';
 import notifee from '@notifee/react-native';
 import notificationService from './lib/services/Notification';
+
+// TV Platform detection
+const isTV = Platform.isTV;
+
 // Lazy-load Firebase modules so app runs without google-services files
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const getAnalytics = (): any | null => {
@@ -69,7 +73,7 @@ const getCrashlytics = (): any | null => {
 enableScreens(true);
 enableFreeze(true);
 
-const isLargeScreen = Dimensions.get('window').width > 768;
+const isLargeScreen = Dimensions.get('window').width > 768 || isTV;
 
 export type HomeStackParamList = {
   Home: undefined;
@@ -349,7 +353,7 @@ const App = () => {
       <Tab.Navigator
         detachInactiveScreens={true}
         screenOptions={{
-          animation: 'shift',
+          animation: isTV ? 'none' : 'shift',
           tabBarLabelPosition: 'below-icon',
           tabBarVariant: isLargeScreen ? 'material' : 'uikit',
           popToTopOnBlur: false,
@@ -372,7 +376,12 @@ const App = () => {
                 paddingHorizontal: 0,
                 paddingTop: 5,
               }
-            : {},
+            : isTV
+              ? {
+                  backgroundColor: 'rgba(0, 0, 0, 0.9)',
+                  width: 80,
+                }
+              : {},
           tabBarBackground: () => <TabBarBackgound />,
           tabBarHideOnKeyboard: true,
           tabBarButton: props => {
@@ -381,6 +390,7 @@ const App = () => {
                 accessibilityRole="button"
                 accessibilityState={props.accessibilityState}
                 style={props.style as StyleProp<ViewStyle>}
+                className="focus:opacity-100 border focus:border-white"
                 onPress={e => {
                   props.onPress && props.onPress(e);
                   if (

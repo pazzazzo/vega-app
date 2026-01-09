@@ -7,7 +7,10 @@ import {
   View,
   Platform,
   TouchableNativeFeedback,
+  Pressable,
+  useTVEventHandler,
 } from 'react-native';
+import {isTV} from '../../lib/tv/constants';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -79,8 +82,16 @@ const Player = ({route}: Props): React.JSX.Element => {
     useWatchHistoryStore();
 
   // Player ref
-  const playerRef: React.RefObject<VideoRef> = useRef(null);
+  const playerRef: React.RefObject<VideoRef | null> = useRef(null);
   const hasSetInitialTracksRef = useRef(false);
+
+  // TV Remote control refs and constants
+  const TV_SEEK_AMOUNT = 10; // seconds to seek on left/right
+  const tvControlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [isTVControlsVisible, setIsTVControlsVisible] = useState(false);
+  const [tvFocusedControl, setTVFocusedControl] = useState<
+    'audio' | 'subtitle' | 'speed' | 'server' | 'resize' | 'next' | null
+  >(null);
 
   // Shared values for animations
   const loadingOpacity = useSharedValue(0);
@@ -449,8 +460,117 @@ const Player = ({route}: Props): React.JSX.Element => {
       if (unlockButtonTimerRef.current) {
         clearTimeout(unlockButtonTimerRef.current);
       }
+      if (tvControlsTimeoutRef.current) {
+        clearTimeout(tvControlsTimeoutRef.current);
+      }
     };
   }, [unlockButtonTimerRef]);
+
+  // TV Remote event handler
+  const showTVControls = useCallback(() => {
+    setIsTVControlsVisible(true);
+    setShowControls(true);
+    if (tvControlsTimeoutRef.current) {
+      clearTimeout(tvControlsTimeoutRef.current);
+    }
+    tvControlsTimeoutRef.current = setTimeout(() => {
+      setIsTVControlsVisible(false);
+      setShowControls(false);
+      setTVFocusedControl(null);
+    }, 8000);
+  }, [setShowControls]);
+
+  const handleTVSeekForward = useCallback(() => {
+    if (playerRef.current && videoPositionRef.current) {
+      const newPosition = videoPositionRef.current.position + TV_SEEK_AMOUNT;
+      playerRef.current.seek(newPosition);
+      showTVControls();
+    }
+  }, [showTVControls]);
+
+  const handleTVSeekBackward = useCallback(() => {
+    if (playerRef.current && videoPositionRef.current) {
+      const newPosition = Math.max(
+        0,
+        videoPositionRef.current.position - TV_SEEK_AMOUNT,
+      );
+      playerRef.current.seek(newPosition);
+      showTVControls();
+    }
+  }, [showTVControls]);
+
+  // TV Event Handler - using useTVEventHandler hook from react-native-tvos
+  useTVEventHandler((evt: any) => {
+    if (!isTV) {
+      return;
+    }
+
+    const eventType = evt?.eventType;
+    console.log(
+      'TV Event:',
+      eventType,
+      'Controls visible:',
+      isTVControlsVisible,
+      'Focused:',
+      tvFocusedControl,
+    ); // Debug logging
+
+    switch (eventType) {
+      case 'select':
+      case 'playPause':
+        // If controls are visible, the focused Pressable will handle the press
+        // If no controls visible, show them
+        if (!isTVControlsVisible && !showSettings) {
+          showTVControls();
+        }
+        break;
+      case 'right':
+        // Let native focus handle navigation between controls
+        // Only seek if no control is focused
+        if (!isTVControlsVisible && !showSettings && !tvFocusedControl) {
+          handleTVSeekForward();
+        }
+        break;
+      case 'left':
+        // Let native focus handle navigation between controls
+        // Only seek if no control is focused
+        if (!isTVControlsVisible && !showSettings && !tvFocusedControl) {
+          handleTVSeekBackward();
+        }
+        break;
+      case 'up':
+        if (!showSettings && !isTVControlsVisible) {
+          showTVControls();
+        }
+        break;
+      case 'down':
+        if (showSettings) {
+          setShowSettings(false);
+        } else if (isTVControlsVisible) {
+          setIsTVControlsVisible(false);
+          setShowControls(false);
+          setTVFocusedControl(null);
+        }
+        break;
+      case 'longSelect':
+        // Long press for settings
+        setShowSettings(!showSettings);
+        break;
+      case 'menu':
+      case 'back':
+        // Back button handling
+        if (showSettings) {
+          setShowSettings(false);
+        } else if (isTVControlsVisible) {
+          setIsTVControlsVisible(false);
+          setShowControls(false);
+          setTVFocusedControl(null);
+        } else {
+          navigation.goBack();
+        }
+        break;
+    }
+  });
 
   // Animation effects
   useEffect(() => {
@@ -538,8 +658,8 @@ const Player = ({route}: Props): React.JSX.Element => {
   // Memoized video player props
   const videoPlayerProps = useMemo(
     () => ({
-      disableGesture: isPlayerLocked || !enableSwipeGesture,
-      doubleTapTime: 200,
+      disableGesture: isPlayerLocked || !enableSwipeGesture || isTV,
+      doubleTapTime: isTV ? 0 : 200,
       disableSeekButtons: isPlayerLocked || hideSeekButtons,
       showOnStart: !isPlayerLocked,
       source: {
@@ -563,13 +683,15 @@ const Player = ({route}: Props): React.JSX.Element => {
         playerRef?.current?.resume();
         setPlaybackRate(1.0);
       },
-      videoRef: playerRef,
+      videoRef: playerRef as React.RefObject<VideoRef>,
       rate: playbackRate,
       poster: route.params?.poster?.logo || '',
       subtitleStyle: {
-        fontSize: settingsStorage.getSubtitleFontSize() || 16,
+        fontSize: isTV ? 24 : settingsStorage.getSubtitleFontSize() || 16,
         opacity: settingsStorage.getSubtitleOpacity() || 1,
-        paddingBottom: settingsStorage.getSubtitleBottomPadding() || 10,
+        paddingBottom: isTV
+          ? 40
+          : settingsStorage.getSubtitleBottomPadding() || 10,
         subtitlesFollowVideo: false,
       },
       title: {
@@ -585,8 +707,18 @@ const Player = ({route}: Props): React.JSX.Element => {
       toggleResizeModeOnFullscreen: false,
       fullscreenOrientation: 'landscape' as const,
       fullscreenAutorotate: true,
-      onShowControls: () => setShowControls(true),
-      onHideControls: () => setShowControls(false),
+      onShowControls: () => {
+        setShowControls(true);
+        if (isTV) {
+          showTVControls();
+        }
+      },
+      onHideControls: () => {
+        setShowControls(false);
+        if (isTV) {
+          setTVFocusedControl(null);
+        }
+      },
       rewindTime: 10,
       isFullscreen: true,
       disableFullscreen: true,
@@ -604,8 +736,8 @@ const Player = ({route}: Props): React.JSX.Element => {
       selectedVideoTrack,
       style: {flex: 1, zIndex: 100},
       controlAnimationTiming: 357,
-      controlTimeoutDelay: 10000,
-      hideAllControlls: isPlayerLocked,
+      controlTimeoutDelay: isTV ? 8000 : 10000,
+      hideAllControlls: isPlayerLocked || isTV,
     }),
     [
       isPlayerLocked,
@@ -630,6 +762,7 @@ const Player = ({route}: Props): React.JSX.Element => {
       selectedVideoTrack,
       processAudioTracks,
       processVideoTracks,
+      showTVControls,
     ],
   );
 
@@ -695,8 +828,27 @@ const Player = ({route}: Props): React.JSX.Element => {
       {/* Video Player */}
       <VideoPlayer {...videoPlayerProps} />
 
+      {/* TV Focusable overlay - Only when controls are hidden */}
+      {isTV && !isTVControlsVisible && !showSettings && (
+        <Pressable
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            zIndex: 5,
+          }}
+          hasTVPreferredFocus={true}
+          isTVSelectable={true}
+          onPress={() => {
+            showTVControls();
+          }}
+        />
+      )}
+
       {/* Full-screen overlay to detect taps when locked */}
-      {isPlayerLocked && (
+      {isPlayerLocked && !isTV && (
         <TouchableOpacity
           activeOpacity={1}
           onPress={handleLockedScreenTap}
@@ -704,7 +856,7 @@ const Player = ({route}: Props): React.JSX.Element => {
         />
       )}
 
-      {/* Lock/Unlock button */}
+      {/* Lock/Unlock button - Hidden on TV */}
       {!streamLoading && !Platform.isTV && (
         <Animated.View
           style={[lockButtonStyle]}
@@ -735,61 +887,141 @@ const Player = ({route}: Props): React.JSX.Element => {
         </Animated.View>
       )}
 
+      {/* TV Remote Hint - Shows when controls are visible on TV */}
+      {isTV && isTVControlsVisible && showControls && !showSettings && (
+        <View className="absolute top-4 left-4 flex-row items-center gap-3 opacity-60">
+          <View className="flex-row items-center gap-1">
+            <MaterialIcons name="chevron-left" size={20} color="white" />
+            <MaterialIcons name="chevron-right" size={20} color="white" />
+            <Text className="text-white text-sm ml-1">Navigate</Text>
+          </View>
+          <View className="flex-row items-center gap-1">
+            <View className="w-4 h-4 border border-white rounded-sm justify-center items-center">
+              <Text className="text-white text-xs">OK</Text>
+            </View>
+            <Text className="text-white text-sm ml-1">Select</Text>
+          </View>
+          <View className="flex-row items-center gap-1">
+            <MaterialIcons name="keyboard-arrow-down" size={20} color="white" />
+            <Text className="text-white text-sm">Hide</Text>
+          </View>
+        </View>
+      )}
+
       {/* Bottom controls */}
-      {!isPlayerLocked && (
+      {!isPlayerLocked && (showControls || (isTV && isTVControlsVisible)) && (
         <Animated.View
           style={[controlsStyle]}
           className="absolute bottom-3 right-6 flex flex-row justify-center w-full gap-x-16">
           {/* Audio controls */}
-          <TouchableOpacity
+          <Pressable
             onPress={() => {
               setActiveTab('audio');
               setShowSettings(!showSettings);
             }}
-            className="flex flex-row gap-x-1 items-center">
+            onFocus={() => isTV && setTVFocusedControl('audio')}
+            onBlur={() => isTV && setTVFocusedControl(null)}
+            hasTVPreferredFocus={isTV}
+            isTVSelectable={true}
+            style={[
+              {flexDirection: 'row', gap: 4, alignItems: 'center'},
+              isTV &&
+                tvFocusedControl === 'audio' && {
+                  borderWidth: 2,
+                  borderColor: primary,
+                  borderRadius: 8,
+                  padding: 4,
+                },
+            ]}>
             <MaterialIcons
-              style={{opacity: 0.7}}
+              style={{opacity: tvFocusedControl === 'audio' ? 1 : 0.7}}
               name={'multitrack-audio'}
-              size={26}
-              color="white"
+              size={isTV ? 32 : 26}
+              color={tvFocusedControl === 'audio' ? primary : 'white'}
             />
-            <Text className="capitalize text-xs text-white opacity-70">
+            <Text
+              className="capitalize text-white"
+              style={{
+                fontSize: isTV ? 14 : 12,
+                opacity: tvFocusedControl === 'audio' ? 1 : 0.7,
+                color: tvFocusedControl === 'audio' ? primary : 'white',
+              }}>
               {audioTracks[selectedAudioTrackIndex]?.language || 'auto'}
             </Text>
-          </TouchableOpacity>
+          </Pressable>
 
           {/* Subtitle controls */}
-          <TouchableOpacity
+          <Pressable
             onPress={() => {
               setActiveTab('subtitle');
               setShowSettings(!showSettings);
             }}
-            className="flex flex-row gap-x-1 items-center">
+            onFocus={() => isTV && setTVFocusedControl('subtitle')}
+            onBlur={() => isTV && setTVFocusedControl(null)}
+            isTVSelectable={true}
+            style={[
+              {flexDirection: 'row', gap: 4, alignItems: 'center'},
+              isTV &&
+                tvFocusedControl === 'subtitle' && {
+                  borderWidth: 2,
+                  borderColor: primary,
+                  borderRadius: 8,
+                  padding: 4,
+                },
+            ]}>
             <MaterialIcons
-              style={{opacity: 0.6}}
+              style={{opacity: tvFocusedControl === 'subtitle' ? 1 : 0.6}}
               name={'subtitles'}
-              size={24}
-              color="white"
+              size={isTV ? 30 : 24}
+              color={tvFocusedControl === 'subtitle' ? primary : 'white'}
             />
-            <Text className="text-xs capitalize text-white opacity-70">
+            <Text
+              className="capitalize text-white"
+              style={{
+                fontSize: isTV ? 14 : 12,
+                opacity: tvFocusedControl === 'subtitle' ? 1 : 0.7,
+                color: tvFocusedControl === 'subtitle' ? primary : 'white',
+              }}>
               {selectedTextTrackIndex === 1000
                 ? 'none'
                 : textTracks[selectedTextTrackIndex]?.language}
             </Text>
-          </TouchableOpacity>
+          </Pressable>
 
           {/* Speed controls */}
-          <TouchableOpacity
-            className="flex-row gap-1 items-center opacity-60"
+          <Pressable
             onPress={() => {
               setActiveTab('speed');
               setShowSettings(!showSettings);
-            }}>
-            <MaterialIcons name="speed" size={26} color="white" />
-            <Text className="text-white text-sm">
+            }}
+            onFocus={() => isTV && setTVFocusedControl('speed')}
+            onBlur={() => isTV && setTVFocusedControl(null)}
+            isTVSelectable={true}
+            style={[
+              {flexDirection: 'row', gap: 4, alignItems: 'center'},
+              isTV &&
+                tvFocusedControl === 'speed' && {
+                  borderWidth: 2,
+                  borderColor: primary,
+                  borderRadius: 8,
+                  padding: 4,
+                },
+            ]}>
+            <MaterialIcons
+              name="speed"
+              size={isTV ? 32 : 26}
+              color={tvFocusedControl === 'speed' ? primary : 'white'}
+              style={{opacity: tvFocusedControl === 'speed' ? 1 : 0.6}}
+            />
+            <Text
+              style={{
+                fontSize: isTV ? 16 : 14,
+                color: tvFocusedControl === 'speed' ? primary : 'white',
+                opacity: tvFocusedControl === 'speed' ? 1 : 0.6,
+              }}>
               {playbackRate === 1 ? '1.0' : playbackRate}
             </Text>
-          </TouchableOpacity>
+          </Pressable>
 
           {/* PIP */}
           {!Platform.isTV && (
@@ -808,14 +1040,37 @@ const Player = ({route}: Props): React.JSX.Element => {
           )}
 
           {/* Server & Quality */}
-          <TouchableOpacity
-            className="flex-row gap-1 items-center opacity-60"
+          <Pressable
             onPress={() => {
               setActiveTab('server');
               setShowSettings(!showSettings);
-            }}>
-            <MaterialIcons name="video-settings" size={25} color="white" />
-            <Text className="text-xs text-white capitalize">
+            }}
+            onFocus={() => isTV && setTVFocusedControl('server')}
+            onBlur={() => isTV && setTVFocusedControl(null)}
+            isTVSelectable={true}
+            style={[
+              {flexDirection: 'row', gap: 4, alignItems: 'center'},
+              isTV &&
+                tvFocusedControl === 'server' && {
+                  borderWidth: 2,
+                  borderColor: primary,
+                  borderRadius: 8,
+                  padding: 4,
+                },
+            ]}>
+            <MaterialIcons
+              name="video-settings"
+              size={isTV ? 30 : 25}
+              color={tvFocusedControl === 'server' ? primary : 'white'}
+              style={{opacity: tvFocusedControl === 'server' ? 1 : 0.6}}
+            />
+            <Text
+              className="capitalize"
+              style={{
+                fontSize: isTV ? 14 : 12,
+                color: tvFocusedControl === 'server' ? primary : 'white',
+                opacity: tvFocusedControl === 'server' ? 1 : 0.6,
+              }}>
               {videoTracks?.length === 1
                 ? formatQuality(videoTracks[0]?.height?.toString() || 'auto')
                 : formatQuality(
@@ -823,36 +1078,84 @@ const Player = ({route}: Props): React.JSX.Element => {
                       'auto',
                   )}
             </Text>
-          </TouchableOpacity>
+          </Pressable>
 
           {/* Resize button */}
-          <TouchableOpacity
-            className="flex-row gap-1 items-center opacity-60"
-            onPress={handleResizeMode}>
-            <MaterialIcons name="fit-screen" size={28} color="white" />
-            <Text className="text-white text-sm min-w-[38px]">
+          <Pressable
+            onPress={handleResizeMode}
+            onFocus={() => isTV && setTVFocusedControl('resize')}
+            onBlur={() => isTV && setTVFocusedControl(null)}
+            isTVSelectable={true}
+            style={[
+              {flexDirection: 'row', gap: 4, alignItems: 'center'},
+              isTV &&
+                tvFocusedControl === 'resize' && {
+                  borderWidth: 2,
+                  borderColor: primary,
+                  borderRadius: 8,
+                  padding: 4,
+                },
+            ]}>
+            <MaterialIcons
+              name="fit-screen"
+              size={isTV ? 34 : 28}
+              color={tvFocusedControl === 'resize' ? primary : 'white'}
+              style={{opacity: tvFocusedControl === 'resize' ? 1 : 0.6}}
+            />
+            <Text
+              style={{
+                minWidth: 38,
+                fontSize: isTV ? 16 : 14,
+                color: tvFocusedControl === 'resize' ? primary : 'white',
+                opacity: tvFocusedControl === 'resize' ? 1 : 0.6,
+              }}>
               {resizeMode === ResizeMode.NONE
                 ? 'Fit'
                 : resizeMode === ResizeMode.COVER
-                ? 'Cover'
-                : resizeMode === ResizeMode.STRETCH
-                ? 'Stretch'
-                : 'Contain'}
+                  ? 'Cover'
+                  : resizeMode === ResizeMode.STRETCH
+                    ? 'Stretch'
+                    : 'Contain'}
             </Text>
-          </TouchableOpacity>
+          </Pressable>
 
           {/* Next episode button */}
           {route.params?.episodeList?.indexOf(activeEpisode) <
             route.params?.episodeList?.length - 1 &&
-            videoPositionRef.current.position /
-              videoPositionRef.current.duration >
-              0.8 && (
-              <TouchableOpacity
-                className="flex-row items-center opacity-60"
-                onPress={handleNextEpisode}>
-                <Text className="text-white text-base">Next</Text>
-                <MaterialIcons name="skip-next" size={28} color="white" />
-              </TouchableOpacity>
+            (isTV ||
+              videoPositionRef.current.position /
+                videoPositionRef.current.duration >
+                0.8) && (
+              <Pressable
+                onPress={handleNextEpisode}
+                onFocus={() => isTV && setTVFocusedControl('next')}
+                onBlur={() => isTV && setTVFocusedControl(null)}
+                isTVSelectable={true}
+                style={[
+                  {flexDirection: 'row', alignItems: 'center'},
+                  isTV &&
+                    tvFocusedControl === 'next' && {
+                      borderWidth: 2,
+                      borderColor: primary,
+                      borderRadius: 8,
+                      padding: 4,
+                    },
+                ]}>
+                <Text
+                  style={{
+                    fontSize: isTV ? 18 : 16,
+                    color: tvFocusedControl === 'next' ? primary : 'white',
+                    opacity: tvFocusedControl === 'next' ? 1 : 0.6,
+                  }}>
+                  Next
+                </Text>
+                <MaterialIcons
+                  name="skip-next"
+                  size={isTV ? 34 : 28}
+                  color={tvFocusedControl === 'next' ? primary : 'white'}
+                  style={{opacity: tvFocusedControl === 'next' ? 1 : 0.6}}
+                />
+              </Pressable>
             )}
         </Animated.View>
       )}
@@ -890,9 +1193,11 @@ const Player = ({route}: Props): React.JSX.Element => {
                   </View>
                 )}
                 {audioTracks.map((track, i) => (
-                  <TouchableOpacity
+                  <Pressable
                     className="flex-row gap-3 items-center rounded-md my-1 overflow-hidden ml-2"
                     key={i}
+                    isTVSelectable={true}
+                    hasTVPreferredFocus={i === 0}
                     onPress={() => {
                       setSelectedAudioTrack({
                         type: SelectedTrackType.LANGUAGE,
@@ -932,7 +1237,7 @@ const Player = ({route}: Props): React.JSX.Element => {
                     {selectedAudioTrackIndex === i && (
                       <MaterialIcons name="check" size={20} color="white" />
                     )}
-                  </TouchableOpacity>
+                  </Pressable>
                 ))}
               </ScrollView>
             )}
@@ -947,8 +1252,10 @@ const Player = ({route}: Props): React.JSX.Element => {
                     <Text className="text-lg font-bold text-center text-white">
                       Subtitle
                     </Text>
-                    <TouchableOpacity
+                    <Pressable
                       className="flex-row gap-3 items-center rounded-md my-1 overflow-hidden ml-3"
+                      isTVSelectable={true}
+                      hasTVPreferredFocus={true}
                       onPress={() => {
                         setSelectedTextTrack({
                           type: SelectedTrackType.DISABLED,
@@ -965,13 +1272,14 @@ const Player = ({route}: Props): React.JSX.Element => {
                         }}>
                         Disabled
                       </Text>
-                    </TouchableOpacity>
+                    </Pressable>
                   </View>
                 }
                 ListFooterComponent={
                   <>
-                    <TouchableOpacity
+                    <Pressable
                       className="flex-row gap-3 items-center rounded-md my-1 overflow-hidden ml-2"
+                      isTVSelectable={true}
                       onPress={async () => {
                         try {
                           const res = await DocumentPicker.getDocumentAsync({
@@ -1005,7 +1313,7 @@ const Player = ({route}: Props): React.JSX.Element => {
                       <Text className="text-base font-semibold text-white">
                         Add external file
                       </Text>
-                    </TouchableOpacity>
+                    </Pressable>
                     <SearchSubtitles
                       searchQuery={searchQuery}
                       setSearchQuery={setSearchQuery}
@@ -1014,8 +1322,9 @@ const Player = ({route}: Props): React.JSX.Element => {
                   </>
                 }
                 renderItem={({item: track}) => (
-                  <TouchableOpacity
+                  <Pressable
                     className="flex-row gap-3 items-center rounded-md my-1 overflow-hidden ml-2"
+                    isTVSelectable={true}
                     onPress={() => {
                       setSelectedTextTrack({
                         type: SelectedTrackType.INDEX,
@@ -1061,7 +1370,7 @@ const Player = ({route}: Props): React.JSX.Element => {
                     {selectedTextTrackIndex === track.index && (
                       <MaterialIcons name="check" size={20} color="white" />
                     )}
-                  </TouchableOpacity>
+                  </Pressable>
                 )}
               />
             )}
@@ -1075,9 +1384,11 @@ const Player = ({route}: Props): React.JSX.Element => {
                   </Text>
                   {streamData?.length > 0 &&
                     streamData?.map((track, i) => (
-                      <TouchableOpacity
+                      <Pressable
                         className="flex-row gap-3 items-center rounded-md my-1 overflow-hidden ml-2"
                         key={i}
+                        isTVSelectable={true}
+                        hasTVPreferredFocus={i === 0}
                         onPress={() => {
                           setSelectedStream(track);
                           setShowSettings(false);
@@ -1096,7 +1407,7 @@ const Player = ({route}: Props): React.JSX.Element => {
                         {track.link === selectedStream.link && (
                           <MaterialIcons name="check" size={20} color="white" />
                         )}
-                      </TouchableOpacity>
+                      </Pressable>
                     ))}
                 </ScrollView>
 
@@ -1106,9 +1417,10 @@ const Player = ({route}: Props): React.JSX.Element => {
                   </Text>
                   {videoTracks &&
                     videoTracks.map((track: any, i: any) => (
-                      <TouchableOpacity
+                      <Pressable
                         className="flex-row gap-3 items-center rounded-md my-1 overflow-hidden ml-2"
                         key={i}
+                        isTVSelectable={true}
                         onPress={() => {
                           setSelectedVideoTrack({
                             type: SelectedVideoTrackType.INDEX,
@@ -1138,7 +1450,7 @@ const Player = ({route}: Props): React.JSX.Element => {
                         {selectedQualityIndex === i && (
                           <MaterialIcons name="check" size={20} color="white" />
                         )}
-                      </TouchableOpacity>
+                      </Pressable>
                     ))}
                 </ScrollView>
               </View>
@@ -1151,9 +1463,11 @@ const Player = ({route}: Props): React.JSX.Element => {
                   Playback Speed
                 </Text>
                 {playbacks.map((rate, i) => (
-                  <TouchableOpacity
+                  <Pressable
                     className="flex-row gap-3 items-center rounded-md my-1 overflow-hidden ml-2"
                     key={i}
+                    isTVSelectable={true}
+                    hasTVPreferredFocus={i === 2}
                     onPress={() => {
                       setPlaybackRate(rate);
                       setShowSettings(false);
@@ -1168,7 +1482,7 @@ const Player = ({route}: Props): React.JSX.Element => {
                     {playbackRate === rate && (
                       <MaterialIcons name="check" size={20} color="white" />
                     )}
-                  </TouchableOpacity>
+                  </Pressable>
                 ))}
               </ScrollView>
             )}

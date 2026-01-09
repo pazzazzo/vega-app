@@ -51,6 +51,7 @@ export class ExtensionManager {
       const response = await axios.get(manifestUrl, {
         timeout: 10000,
       });
+      console.log('Manifest fetched successfully');
 
       if (!response.data || !Array.isArray(response.data)) {
         throw new Error('Invalid manifest format');

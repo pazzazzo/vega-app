@@ -4,6 +4,7 @@ import {
   RefreshControl,
   View,
   Text,
+  Platform,
 } from 'react-native';
 import Slider from '../../components/Slider';
 import React, {useCallback, useMemo, useRef, useState} from 'react';
@@ -26,6 +27,9 @@ import {providerManager} from '../../lib/services/ProviderManager';
 import Tutorial from '../../components/Touturial';
 import {QueryErrorBoundary} from '../../components/ErrorBoundary';
 import {StatusBar} from 'expo-status-bar';
+
+// TV-specific check
+const isTV = Platform.isTV;
 
 type Props = NativeStackScreenProps<HomeStackParamList, 'Home'>;
 
@@ -109,7 +113,7 @@ const Home = ({}: Props) => {
       ));
   }, [provider?.value]);
 
-  // Memoized content sliders
+  // Memoized content sliders - with TV focus support
   const contentSliders = useMemo(() => {
     return homeData.map((item, index) => (
       <Slider
@@ -118,6 +122,7 @@ const Home = ({}: Props) => {
         title={item.title}
         posts={item.Posts}
         filter={item.filter}
+        hasTVPreferredFocus={isTV && index === 0}
       />
     ));
   }, [homeData]);
@@ -155,15 +160,17 @@ const Home = ({}: Props) => {
         <SafeAreaView className="bg-black flex-1">
           <DrawerLayout
             drawerPosition="left"
-            drawerWidth={200}
-            drawerLockMode={disableDrawer ? 'locked-closed' : 'unlocked'}
+            drawerWidth={isTV ? 300 : 200}
+            drawerLockMode={
+              disableDrawer || isTV ? 'locked-closed' : 'unlocked'
+            }
             drawerType="front"
-            edgeWidth={70}
+            edgeWidth={isTV ? 0 : 70}
             useNativeAnimations={false}
             ref={drawer}
             drawerBackgroundColor="transparent"
             renderNavigationView={() =>
-              !disableDrawer && <ProviderDrawer drawerRef={drawer} />
+              !disableDrawer && !isTV && <ProviderDrawer drawerRef={drawer} />
             }>
             <StatusBar
               style="auto"
@@ -186,16 +193,25 @@ const Home = ({}: Props) => {
                   onRefresh={handleRefresh}
                 />
               }>
-              <HeroOptimized drawerRef={drawer} isDrawerOpen={isDrawerOpen} />
+              <HeroOptimized
+                drawerRef={drawer}
+                isDrawerOpen={isDrawerOpen}
+                hasTVPreferredFocus={isTV}
+              />
 
               <ContinueWatching />
 
-              <View className="-mt-6 relative z-20">
+              <View
+                style={{
+                  marginTop: isTV ? -32 : -24,
+                  position: 'relative',
+                  zIndex: 20,
+                }}>
                 {isLoading ? loadingSliders : contentSliders}
                 {errorComponent}
               </View>
 
-              <View className="h-16" />
+              <View style={{height: isTV ? 80 : 64}} />
             </ScrollView>
           </DrawerLayout>
         </SafeAreaView>
