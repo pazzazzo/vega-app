@@ -82,14 +82,21 @@ module.exports = () => {
         ios: {},
       },
     ],
+    [
+      '@react-native-tvos/config-tv',
+      {
+        isTV: true,
+        androidTVBanner: './assets/adaptive_icon.png',
+      },
+    ],
   ];
 
   return {
     expo: {
       name: 'Vega',
-      scheme: 'com.vega',
+      scheme: 'com.vega2',
       displayName: 'Vega',
-      newArchEnabled: false,
+      newArchEnabled: true,
       autolinking: {exclude: ['expo-splash-screen']},
       plugins,
       slug: 'vega',
@@ -101,7 +108,7 @@ module.exports = () => {
           : {}),
         minSdkVersion: 24,
         edgeToEdgeEnabled: true,
-        package: 'com.vega',
+        package: 'com.vega2',
         versionCode: 155,
         permissions: [
           'FOREGROUND_SERVICE',
