@@ -85,6 +85,8 @@ const Tutorial = () => {
           Providers give you access to different streaming sources.
         </Text>
         <TouchableOpacity
+          focusable={true}
+          hasTVPreferredFocus={true}
           onPress={handleGoToExtensions}
           className="px-6 py-3 rounded-xl w-full flex-row items-center justify-center"
           style={{backgroundColor: primary}}>
