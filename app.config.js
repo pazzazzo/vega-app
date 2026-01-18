@@ -76,6 +76,13 @@ module.exports = () => {
         ios: {},
       },
     ],
+
+    [
+      'expo-dev-client',
+      {
+        launchMode: 'most-recent',
+      },
+    ],
   ];
 
   return {
@@ -89,6 +96,9 @@ module.exports = () => {
       slug: 'vega',
       version: '3.2.6',
       userInterfaceStyle: 'dark',
+      experiments: {
+        reactCompiler: true,
+      },
       android: {
         ...(hasAndroidGoogleServices
           ? {googleServicesFile: './google-services.json'}
