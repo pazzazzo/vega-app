@@ -266,7 +266,7 @@ const Settings = ({navigation}: Props) => {
                       color={primary}
                     />
                     <Text
-                      className="text-white ml-3 text-base flex-1"
+                      className="text-white ml-3 text-base"
                       numberOfLines={1}>
                       Watch History
                     </Text>

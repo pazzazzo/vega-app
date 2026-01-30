@@ -308,7 +308,7 @@ const Preferences = () => {
 
             {/* Always Use External Downloader */}
             <View className="flex-row items-center justify-between p-4">
-              <Text className="text-white text-base">
+              <Text className="text-white text-base flex-1">
                 Always Use External Downloader
               </Text>
               <Switch
@@ -332,7 +332,7 @@ const Preferences = () => {
           <View className="bg-[#1A1A1A] rounded-xl overflow-hidden">
             {/* External Player */}
             <View className="flex-row items-center justify-between p-4 border-b border-[#262626]">
-              <Text className="text-white text-base">
+              <Text className="text-white text-base flex-1">
                 Always Use External Player
               </Text>
               <Switch
